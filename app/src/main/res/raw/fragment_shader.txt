@@ -1,0 +1,23 @@
+precision highp float;
+
+varying vec2 textureCoordinate;
+
+uniform sampler2D inputImageTexture;
+
+uniform float width;
+uniform float height;
+
+void main() {
+    mat3 counting = mat3(1.164, 1.164, 1.164
+                         0.000, -0.392, 2.017,
+                         1.596, -0.813, 0);
+    vec2 resolution = vec2(width, height);
+    vec2 mPosition = gl_FragCoord.xy/resolution;
+    vec4 yuyv = vec4(texture2D(inputImageTexture, mPosition);
+    //int x = (int) mPosition.x;
+    //if(x % 2 == 1) {
+    //    yuyv.r = yuyv.b;
+    //}
+    vec3 result = yuyv.xyz * counting;
+  	gl_FragColor = vec4(result, 1.0);
+}

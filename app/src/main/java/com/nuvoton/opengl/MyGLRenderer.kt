@@ -1,251 +1,305 @@
 package com.nuvoton.opengl
 
-import android.opengl.GLES10
-import android.opengl.GLES31
+import android.content.Context
+import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.util.Log
-import java.nio.Buffer
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.FloatBuffer
+import java.nio.IntBuffer
+import java.nio.charset.Charset
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
+import kotlin.random.Random
 
-class MyGLRenderer : GLSurfaceView.Renderer {
-    var bgColorValue = 0f
-    private val vertexShader = """
-        attribute vec4 position;
-        uniform mat4 matrix;
-        void main() {
-            gl_Position = vec4(-1.0, 0.0, 0.0, 1.0);
-            gl_PointSize = 5.0;
+class MyGLRenderer(context: Context) : GLSurfaceView.Renderer {
+    companion object {
+        val TEXTURE_NO_ROTATION = floatArrayOf(
+            0f, 1f,
+            1f, 1f,
+            0f, 0f,
+            1f, 0f)
+        val TEXTURE_ROTATED_90 = floatArrayOf(
+            1.0f, 1.0f,
+            1.0f, 0.0f,
+            0.0f, 1.0f,
+            0.0f, 0.0f
+        )
+
+        val TEXTURE_ROTATED_180 = floatArrayOf(
+            1.0f, 0.0f,
+            0.0f, 0.0f,
+            1.0f, 1.0f,
+            0.0f, 1.0f
+        )
+
+        val TEXTURE_ROTATED_270 = floatArrayOf(
+            0.0f, 0.0f,
+            0.0f, 1.0f,
+            1.0f, 0.0f,
+            1.0f, 1.0f
+        )
+    }
+
+    var mWidth = 640
+    var mHeight = 480
+    var frameWidth = -1
+    var frameHeight = -1
+
+    var mThermalWidth = 32
+    var mThermalHeight = 32
+
+    val mBytesPerPixelInYUV = 2
+    val mBytesPerPixelInRGB = 3
+    val dataSize = (mWidth * mHeight * mBytesPerPixelInYUV).toInt()
+    var cmosImageBuffer: ByteBuffer? = null
+    var thermalDataBuffer: IntBuffer? = null
+    var thermalImageBuffer: ByteBuffer? = null
+
+    var imageOnOff = Pair(true, true)
+
+    private val vertices = floatArrayOf(
+        -1f, 1f, 0f,
+        -1f, -1f, 0f,
+        1f, 1f, 0f,
+        1f, -1f, 0f
+    )
+
+
+    private val textureCoordinate = TEXTURE_ROTATED_270
+
+    private var mVerticesBuffer: FloatBuffer? = null
+    private var mTextureCoordinateBuffer: FloatBuffer? = null
+
+    private var mPositionHandler = -1
+    private var mTextureCoordinateHandler = -1
+    private var mGLCMOSUniformTexture = -1
+    private var mGLThermalUniformUvTexture = -1
+    private var mGLUniformWidthHandler = -1
+    private var mGLUniformHeightHandler = -1
+
+    private var mProgramHandler = -1
+
+    private var mTextureId = -1
+//    private var mUvTextureId = -1
+
+    private var context: Context? = context
+
+    init {
+        mVerticesBuffer = ByteBuffer.allocateDirect(vertices.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+        mVerticesBuffer!!.put(vertices).position(0)
+        mTextureCoordinateBuffer = ByteBuffer.allocateDirect(textureCoordinate.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+        mTextureCoordinateBuffer!!.put(textureCoordinate).position(0)
+        cmosImageBuffer = ByteBuffer.allocate(dataSize)
+        for (i in 0 until dataSize) {
+            when(i) {
+                in 0 until dataSize*1/2 + 640 -> {
+                    when(i%4) {
+                        0 -> {
+                            cmosImageBuffer!!.put(255.toByte())
+                        }
+                        1 -> {
+                            cmosImageBuffer!!.put(255.toByte())
+                        }
+                        2 -> {
+                            cmosImageBuffer!!.put(0.toByte())
+                        }
+                        3 -> {
+                            cmosImageBuffer!!.put(0.toByte())
+                        }
+                    }
+                }
+                in (dataSize*1/2 + 640) until (dataSize*1/2 + 640*2) -> {
+                    when(i%4) {
+                        0 -> {
+                            cmosImageBuffer!!.put(149.toByte())
+                        }
+                        1 -> {
+                            cmosImageBuffer!!.put(43.toByte())
+                        }
+                        2 -> {
+                            cmosImageBuffer!!.put(0.toByte())
+                        }
+                        3 -> {
+                            cmosImageBuffer!!.put(21.toByte())
+                        }
+                    }
+                }
+                in (dataSize*1/2 + 640*2) until (dataSize) -> {
+                    when(i%4) {
+                        0 -> {
+                            cmosImageBuffer!!.put(76.toByte())
+                        }
+                        1 -> {
+                            cmosImageBuffer!!.put(84.toByte())
+                        }
+                        2 -> {
+                            cmosImageBuffer!!.put(255.toByte())
+                        }
+                        3 -> {
+                            cmosImageBuffer!!.put(255.toByte())
+                        }
+                    }
+                }
             }
-            """.trimIndent()
-
-    private val fragmentShader = """
-        void main() {
-        gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
         }
-    """.trimIndent()
+        cmosImageBuffer!!.position(0)
 
-    private val computeShader = """
-        uniform float radius
+        thermalDataBuffer = IntBuffer.allocate(mThermalWidth * mThermalHeight)
+        for (i in 0 until thermalDataBuffer!!.capacity()) {
+            thermalDataBuffer!!.put(((NuColor.COLOR_TABLE_LOWER_SIZE+600)..(NuColor.COLOR_TABLE_LOWER_SIZE+1600)).random())
+        }
+        thermalDataBuffer!!.position(0)
 
-struct Vector3f {
-    float x;
-    float y;
-    float z;
-    float w;
-}
+        thermalImageBuffer = ByteBuffer.allocate(mThermalWidth * mThermalHeight * mBytesPerPixelInRGB)
 
-struct AttrData {
-    Vector3f vertex;
-    Vector3f color;
-}
+        (0 until thermalDataBuffer!!.capacity()).forEach {
+            val value = thermalDataBuffer!![it]
+            val rgb = NuColor.RGB_ColorTable[value]
+            thermalImageBuffer!!.put(it*mBytesPerPixelInRGB, rgb.R.toByte())
+            thermalImageBuffer!!.put(it*mBytesPerPixelInRGB+1, rgb.G.toByte())
+            thermalImageBuffer!!.put(it*mBytesPerPixelInRGB+2, rgb.B.toByte())
+        }
 
-layout(std140, binding = 0) buffer destBuffer {
-    AttrData data[];
-} outBuffer;
+        thermalImageBuffer!!.position(0)
+    }
 
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
-
-void main() {
-    ivec2 storePos = ivec2(gl_globalInvocationID.xy);
-
-    uint gWidth = gl_WorkGroupSize.x * gl_NumWorkGroups.x;
-    uint gHeight = gl_WorkGroupSize.y * gl_NumWorkGroups.y;
-    uint gXize = gWidth *gHeight;
-
-    uint offset = storePos.y *gWidth + storePos.x;
-
-    float alpha = 2.0 * 3.14159265359 * (float(offset) / float(gSize));
-
-    outBuffer.data[offset].vertex.x = sin(alpha) * radius;
-    outBuffer.data[offset].vertex.y = cos(alphs) * radius;
-    outBuffer.data[offset].vertex.z = 0.0;
-    outBuffer.data[offset].vertex.w = 1.0;
-
-    outBuffer.data[offset].color.x = storePos.x / float(gWidth);
-    outBuffer.data[offset].color.y = 0.0;
-    outBuffer.data[offset].color.z = 1.0;
-    outBuffer.data[offset].color.w = 1.0;
-
-}
-
-    """.trimIndent()
-
-    private var mGLProgram : Int = -1
-    private var frameNum = 0
-    private var mInputBuffer: Buffer? = null
-    private val mWidth = 32
-    private val mHeight = 32
-    private val mBytesPerPixel = 8
-    private val mSize = mWidth * mHeight * mBytesPerPixel
-
-    
     override fun onSurfaceCreated(unused: GL10?, config: EGLConfig?) {
-/*
-        mInputBuffer = createInputBuffer()
-        initGLSL()
-        */
-        GLES31.glClearColor(0f, 0f, 0f, 1f)
-        val vsh = GLES31.glCreateShader(GLES31.GL_VERTEX_SHADER)
-        GLES31.glShaderSource(vsh, vertexShader)
-        GLES31.glCompileShader(vsh)
+        GLES20.glClearColor(0f, 0f, 0f, 1f)
+        
+        val textures = intArrayOf(0)
+        GLES20.glGenTextures(1, textures, 0)
 
-        val fsh = GLES31.glCreateShader(GLES31.GL_FRAGMENT_SHADER)
-        GLES31.glShaderSource(fsh, fragmentShader)
-        GLES31.glCompileShader(fsh)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textures[0])
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_NEAREST);
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, mWidth/2, mHeight, 0, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, cmosImageBuffer)
+        mTextureId = textures[0]
 
-        val csh = GLES31.glCreateShader(GLES31.GL_COMPUTE_SHADER)
-        GLES31.glShaderSource(csh, computeShader)
-        GLES31.glCompileShader(csh)
+//        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textures[1])
+//        GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR.toFloat());
+//        GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR.toFloat())
+//        GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE.toFloat())
+//        GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE.toFloat())
+//        GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, mWidth, mHeight, 0, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, cmosImageBuffer)
+//        mUvTextureId = textures[1]
 
-        mGLProgram = GLES31.glCreateProgram()
-        GLES31.glAttachShader(mGLProgram, vsh)
-        GLES31.glAttachShader(mGLProgram, fsh)
-//        GLES31.glAttachShader(mGLProgram, csh)
-        GLES31.glLinkProgram(mGLProgram)
 
-        GLES31.glValidateProgram(mGLProgram)
+        val compileStatus = intArrayOf(-1)
 
-        val status = IntArray(1)
+        var vertexShaderHandle = GLES20.glCreateShader(GLES20.GL_VERTEX_SHADER)
+        if (vertexShaderHandle != 0) {
+            GLES20.glShaderSource(vertexShaderHandle, loadRawString(R.raw.vertex))
+            GLES20.glCompileShader(vertexShaderHandle)
 
-        GLES31.glGetProgramiv(mGLProgram, GLES31.GL_VALIDATE_STATUS, status, 0)
-        Log.d(this.javaClass.simpleName, "validate shader program result=${GLES31.glGetProgramInfoLog(mGLProgram)}")
+            GLES20.glGetShaderiv(vertexShaderHandle, GLES20.GL_COMPILE_STATUS, compileStatus, 0)
+            if (compileStatus[0] == 0) { // compiled failed
+                Log.d(this.javaClass.simpleName, "Vertex shader compile status = ${GLES20.glGetShaderInfoLog(vertexShaderHandle)}")
+                GLES20.glDeleteShader(vertexShaderHandle)
+                vertexShaderHandle = 0
+            }
+
+        }
+
+        if (vertexShaderHandle == 0) throw RuntimeException("Error creating vertex shader")
+
+        var fragmentShaderHandle = GLES20.glCreateShader(GLES20.GL_FRAGMENT_SHADER)
+        if (fragmentShaderHandle != 0) {
+            GLES20.glShaderSource(fragmentShaderHandle, loadRawString(R.raw.fragment))
+
+            GLES20.glCompileShader(fragmentShaderHandle)
+
+            GLES20.glGetShaderiv(fragmentShaderHandle, GLES20.GL_COMPILE_STATUS, compileStatus, 0)
+            if (compileStatus[0] == 0) { // compiled failed
+                Log.d(this.javaClass.simpleName, "Fragment shader compile status = ${GLES20.glGetShaderInfoLog(fragmentShaderHandle)}")
+                GLES20.glDeleteShader(fragmentShaderHandle)
+                fragmentShaderHandle = 0
+            }
+
+        }
+
+        if (fragmentShaderHandle == 0) throw RuntimeException("Error creating fragment shader")
+
+        var programHandler = GLES20.glCreateProgram()
+        if (programHandler != 0) {
+            GLES20.glAttachShader(programHandler, vertexShaderHandle)
+            GLES20.glAttachShader(programHandler, fragmentShaderHandle)
+            GLES20.glBindAttribLocation(programHandler, 0, "position")
+            GLES20.glBindAttribLocation(programHandler, 1, "inputTextureCoordinate")
+            GLES20.glLinkProgram(programHandler)
+
+            val linkStatus = intArrayOf(0)
+            GLES20.glGetProgramiv(programHandler, GLES20.GL_LINK_STATUS, linkStatus, 0)
+            if (linkStatus[0] == 0) {
+                GLES20.glDeleteShader(programHandler)
+                programHandler = 0
+            }
+        }
+
+        if (programHandler == 0) throw java.lang.RuntimeException("Error creating program")
+
+        mPositionHandler = GLES20.glGetAttribLocation(programHandler, "position")
+        mTextureCoordinateHandler = GLES20.glGetAttribLocation(programHandler, "inputTextureCoordinate")
+        mGLCMOSUniformTexture = GLES20.glGetUniformLocation(programHandler, "inputImageTexture")
+//        mGLUniformUvTexture = GLES20.glGetUniformLocation(programHandler, "uvTexture")
+        mGLUniformWidthHandler = GLES20.glGetUniformLocation(programHandler, "width")
+        mGLUniformHeightHandler = GLES20.glGetUniformLocation(programHandler, "height")
+
+        GLES20.glUseProgram(programHandler)
+        mProgramHandler = programHandler
+
+        Log.d(this.javaClass.simpleName, "OpenGLES20 init done")
     }
 
     override fun onSurfaceChanged(unused: GL10?, width: Int, height: Int) {
-        GLES31.glViewport(0, 0, width, height)
+        frameWidth = width
+        frameHeight = height
+//        val frameRatio = frameWidth.toFloat() / frameHeight.toFloat()
+//        val ratio = mWidth.toFloat() / mHeight.toFloat()
+//        if (frameRatio > ratio) {
+//            frameHeight = (frameWidth/ratio).toInt()
+//        }else {
+//            frameWidth = (frameHeight*ratio).toInt()
+//        }
+        GLES20.glViewport(0, 0, frameWidth, frameHeight)
     }
 
     override fun onDrawFrame(unused: GL10?) {
-        /*
-        // FROM CSDN
-        createEnvi()
-        transferToTexture(mInputBuffer!!, fTextures[0])
-        val a0 = FloatBuffer.allocate(mSize)
-        val a1 = FloatBuffer.allocate(mSize)
-        val a2 = FloatBuffer.allocate(mSize)
+//        Log.d(this.javaClass.simpleName, "onDraw")
+        GLES20.glUseProgram(mProgramHandler)
+//        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
+        GLES20.glVertexAttribPointer(mPositionHandler, 3, GLES20.GL_FLOAT, false, 0, mVerticesBuffer)
+        GLES20.glEnableVertexAttribArray(mPositionHandler)
+        GLES20.glVertexAttribPointer(mTextureCoordinateHandler, 2, GLES20.GL_FLOAT, false, 0, mTextureCoordinateBuffer)
+        GLES20.glEnableVertexAttribArray(mTextureCoordinateHandler)
+        GLES20.glUniform1f(mGLUniformWidthHandler, (mWidth).toFloat())
+        GLES20.glUniform1f(mGLUniformHeightHandler, (mHeight).toFloat())
 
-        val begin = System.currentTimeMillis()
-        performCompute(fTextures[0], fTextures[1])
-        performCompute(fTextures[1], fTextures[2])
-        Log.w(this.javaClass.simpleName, "total compute spent: ${System.currentTimeMillis() - begin}")
-        GLES31.glReadBuffer(GLES31.GL_COLOR_ATTACHMENT0)
-        GLES31.glReadPixels(0, 0, mWidth, mHeight, GLES31.GL_RGBA, GLES31.GL_FLOAT, a0)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mTextureId)
+        GLES20.glUniform1i(mGLCMOSUniformTexture, 0)
 
-        GLES31.glReadBuffer(GLES31.GL_COLOR_ATTACHMENT1)
-        GLES31.glReadPixels(0, 0, mWidth, mHeight, GLES31.GL_RGBA, GLES31.GL_FLOAT, a1)
+//        GLES20.glActiveTexture(GLES20.GL_TEXTURE1)
+//        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mUvTextureId)
+//        GLES20.glUniform1i(mGLUniformUvTexture, 1)
 
-        GLES31.glReadBuffer(GLES31.GL_COLOR_ATTACHMENT2)
-        GLES31.glReadPixels(0, 0, mWidth, mHeight, GLES31.GL_RGBA, GLES31.GL_FLOAT, a2)
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+//        GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, mWidth/2, mHeight, 0, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, cmosImageBuffer)
+        GLES20.glTexSubImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, 0, frameWidth, frameHeight, 0, GLES20.GL_UNSIGNED_BYTE, cmosImageBuffer)
 
-        val o1 = a0.array()
-        val o2 = a1.array()
-        val o3 = a2.array()
-        o1.iterator().forEach { Log.d(this.javaClass.simpleName, "${it.toString()}") }
-         */
+        GLES20.glDisableVertexAttribArray(mPositionHandler)
+        GLES20.glDisableVertexAttribArray(mTextureCoordinateHandler)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
+//        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 1)
 
-        GLES31.glClear(GLES31.GL_COLOR_BUFFER_BIT)
-        GLES31.glUseProgram(mGLProgram)
-        val iLocRadius = GLES31.glGetUniformLocation(mGLProgram, "radius")
-        GLES31.glUniform1f(iLocRadius, frameNum.toFloat())
-        frameNum++
-        GLES31.glDispatchCompute(2, 2, 1)
-        GLES31.glBindBufferBase(GLES31.GL_SHADER_STORAGE_BUFFER, 0, 0)
-        GLES31.glMemoryBarrier(GLES31.GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT)
-
-        GLES31.glDrawArrays(GLES31.GL_POINTS, 0, 1)
+//        Log.d(this.javaClass.simpleName, "${cmosImageBuffer?.get(0)}")
     }
 
-    /* FROM CSDN
-    private fun createInputBuffer() : FloatBuffer {
-
-        val floatBuffer = FloatBuffer.allocate(mSize)
-        for ( i in 0 until mSize) {
-            floatBuffer.put(i.toFloat())
-        }
-        floatBuffer.position(0)
-        return floatBuffer
+    private fun loadRawString(rawId : Int) : String {
+        val inputStream = context?.resources?.openRawResource(rawId)
+        return inputStream!!.bufferedReader(Charset.defaultCharset()).use { it.readText() }
     }
-
-    private val fFrame = IntArray(3)
-    private val fTextures = IntArray(3)
-
-    private fun createEnvi() {
-        GLES31.glGenFramebuffers(1, fFrame, 0)
-        GLES31.glBindFramebuffer(GLES31.GL_FRAMEBUFFER, fFrame[0])
-        GLES31.glGenTextures(1, fTextures, 0)
-        for (i in 0..2) {
-            GLES31.glBindTexture(GLES31.GL_TEXTURE_2D, fTextures[i])
-            GLES31.glTexStorage2D(GLES31.GL_TEXTURE_2D, 1, GLES31.GL_RGBA32F, mWidth, mHeight)
-            GLES31.glTexParameteri(GLES31.GL_TEXTURE_2D, GLES31.GL_TEXTURE_MIN_FILTER, GLES31.GL_LINEAR)
-            GLES31.glTexParameteri(GLES31.GL_TEXTURE_2D, GLES31.GL_TEXTURE_MAG_FILTER, GLES31.GL_LINEAR)
-            GLES31.glTexParameteri(GLES31.GL_TEXTURE_2D, GLES31.GL_TEXTURE_WRAP_S, GLES31.GL_CLAMP_TO_EDGE)
-            GLES31.glTexParameteri(GLES31.GL_TEXTURE_2D, GLES31.GL_TEXTURE_WRAP_T, GLES31.GL_CLAMP_TO_EDGE)
-            GLES31.glBindTexture(GLES31.GL_TEXTURE_2D, 0)
-        }
-        GLES31.glFramebufferTexture2D(GLES31.GL_FRAMEBUFFER, GLES31.GL_COLOR_ATTACHMENT0, GLES31.GL_TEXTURE_2D, fTextures[0], 0)
-        GLES31.glFramebufferTexture2D(GLES31.GL_FRAMEBUFFER, GLES31.GL_COLOR_ATTACHMENT1, GLES31.GL_TEXTURE_2D, fTextures[1], 0)
-        GLES31.glFramebufferTexture2D(GLES31.GL_FRAMEBUFFER, GLES31.GL_COLOR_ATTACHMENT2, GLES31.GL_TEXTURE_2D, fTextures[2], 0)
-    }
-
-    private fun transferToTexture(data: Buffer, texId: Int) {
-        GLES31.glBindTexture(GLES31.GL_TEXTURE_2D, texId)
-        GLES31.glTexSubImage2D(GLES31.GL_TEXTURE_2D, 0, 0, 0, mWidth, mHeight, GLES31.GL_RGBA, GLES31.GL_FLOAT, data)
-    }
-
-    private val shader = """
-        layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
-
-        uniform float v[1000];
-        layout(binding = 0, rgba32f) readonly uniform image2D input_image;
-        layout(binding = 1, rgba32f) writeonly uniform image2D output_image;
-
-        shared vec4 scanline[32][32];
-
-        void main(void) {
-        ivec2 pos = ivec2(gl_GlobnalInvocationID.xy);
-        scanline[pos.x][pos.y] = imageLoad(input_image, pos);
-        barrier();
-        vec4 data = scanline[pos.x][pos.y];
-        data.r = data.r + v[999];
-        data.g = data.g;
-        data.b = data.b;
-        data.a = data.a;
-        imageStore(output_image, pos.xy, data);
-        }
-    """.trimIndent()
-
-    private fun initGLSL() {
-
-        val csh = GLES31.glCreateShader(GLES31.GL_COMPUTE_SHADER)
-        GLES31.glShaderSource(csh, shader)
-        GLES31.glCompileShader(csh)
-
-        mGLProgram = GLES31.glCreateProgram()
-        GLES31.glAttachShader(mGLProgram, csh)
-        GLES31.glLinkProgram(mGLProgram)
-
-        GLES31.glValidateProgram(mGLProgram)
-
-        val status = IntArray(1)
-
-        GLES31.glGetProgramiv(mGLProgram, GLES31.GL_VALIDATE_STATUS, status, 0)
-        Log.d(this.javaClass.simpleName, "validate shader program result=${GLES31.glGetProgramInfoLog(mGLProgram)}")
-
-    }
-
-    private fun performCompute(inputTexture: Int, outputTexTure: Int) {
-        GLES31.glUseProgram(mGLProgram)
-        val v = FloatBuffer.allocate(1000)
-        v.put(999, 512f)
-        GLES31.glUniform1fv(GLES31.glGetUniformLocation(mGLProgram, "v"), 1000, v)
-
-        GLES31.glBindImageTexture(0, inputTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES31.GL_RGBA32F)
-        GLES31.glBindImageTexture(1, outputTexTure, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES31.GL_RGBA32F)
-
-        GLES31.glDispatchCompute(1, 1, 1)
-        GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)
-    }
-    */
 }
