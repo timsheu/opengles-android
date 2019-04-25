@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ThermalViewer-GL</string>
+    <string name="string_connected">已連線</string>
+    <string name="string_disconnected">已斷線</string>
+    <string name="string_not_granted">未取得 USB 存取權限</string>
+</resources>

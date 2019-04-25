@@ -1,3 +1,7 @@
 <resources>
-    <string name="app_name">opengl</string>
+    <string name="app_name">ThermalViewer-GL</string>
+    <string name="string_temperature" translatable="false">%1$s \u2103</string>
+    <string name="string_connected">Connected</string>
+    <string name="string_disconnected">Disconnected</string>
+    <string name="string_not_granted">Permission not Granted</string>
 </resources>
