@@ -12,29 +12,9 @@ class RxVar<T> (private val defaultValue: T) {
             observable.onNext(field)
         }
 
-    val observable = BehaviorSubject.createDefault(value)
-
-    var process: T = defaultValue
-    set(value) {
-        field = value
-        flowable.onNext(field)
-    }
-
-    val flowable = PublishProcessor.create<T>()
+    val observable = PublishSubject.create<T>().toSerialized()
 
     override fun toString(): String {
         return "RxVar(defaultValue=$defaultValue, value=$value)"
-    }
-}
-
-class ImageBehaviorSubject(size: Int) {
-    val subject: PublishSubject<ByteArray> = PublishSubject.create()
-    var byteArray: ByteArray = ByteArray(size)
-
-    fun updateImageData(byteBuffer: ByteBuffer) {
-//        synchronized(byteArray) {
-            byteBuffer.get(byteArray)
-            subject.onNext(byteArray)
-//        }
     }
 }

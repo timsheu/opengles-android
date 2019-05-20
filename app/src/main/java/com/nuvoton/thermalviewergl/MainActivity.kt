@@ -7,9 +7,11 @@ import android.view.View
 import android.view.ViewManager
 import android.view.WindowManager
 import android.widget.TextView
+import com.nuvoton.thermalviewergl.utility.Constants
 import com.nuvoton.thermalviewergl.utility.StrokedTextView
 import com.uber.autodispose.AutoDispose
 import com.uber.autodispose.android.lifecycle.AndroidLifecycleScopeProvider
+import io.reactivex.Flowable
 import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.schedulers.Schedulers
@@ -18,12 +20,16 @@ import org.jetbrains.anko.constraint.layout.constraintLayout
 
 import org.jetbrains.anko.custom.ankoView
 import org.jetbrains.anko.sdk27.coroutines.onClick
+import java.nio.ByteBuffer
+import java.util.*
 import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity() {
 
     var myGLSurfaceView: MyGLSurfaceView? = null
     var temperatureText: TextView? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -33,9 +39,8 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         NuUSBHandler.shared.context = this
-        myGLSurfaceView?.rxTemp?.observable?.subscribeOn(Schedulers.io())
-            ?.observeOn(AndroidSchedulers.mainThread())
-            ?.`as`(AutoDispose.autoDisposable(AndroidLifecycleScopeProvider.from(this)))?.subscribe({
+        NuUSBHandler.shared.rxTemp.observable.observeOn(AndroidSchedulers.mainThread())
+            .`as`(AutoDispose.autoDisposable(AndroidLifecycleScopeProvider.from(this))).subscribe({
             var value = it.toFloat()
             value /= 10
             temperatureText?.text = resources.getString(R.string.string_temperature, value.toString())
@@ -87,34 +92,20 @@ class ViewUI : AnkoComponent<MainActivity> {
                     margin = 8
                 }
 
-                val bulk = button("Bulk") {
-                    id = View.generateViewId()
-                    onClick {
-                        NuUSBHandler.shared.isStart = true
-//                        thread {
-                            NuUSBHandler.shared.triggerReadBulk()
-//                        }
-                    }
-                }.lparams(width = wrapContent, height = wrapContent) {
-                    startToStart = view.id
-                    topToTop = view.id
-                    margin = 8
-                }
-
                 val queue = button("UsbRequest") {
                     id = View.generateViewId()
                     onClick {
-                        Observable.interval(0, 100, TimeUnit.MILLISECONDS).subscribeOn(Schedulers.io())
-                            .takeWhile {
-                                NuUSBHandler.shared.isStart
+                        NuUSBHandler.shared.triggerReadUsbRequest()
+                        thread {
+                            while(NuUSBHandler.shared.isStart.value) {
+//                                view.renderer.cmosImageBuffer = NuUSBHandler.shared.cmosBuffers.getReadBuffer()
+                                view.requestRender()
+                                Thread.sleep(10)
                             }
-                            .`as`(AutoDispose.autoDisposable(AndroidLifecycleScopeProvider.from(owner))).subscribe {
-                                val result = NuUSBHandler.shared.triggerReadUsbRequest().copyOf()
-                                owner.myGLSurfaceView?.imageUpdateSubject?.onNext(result)
-                            }
+                        }
                     }
                 }.lparams(width = wrapContent, height = wrapContent) {
-                    startToEnd = bulk.id
+                    startToStart = view.id
                     topToTop = view.id
                     margin = 8
                 }

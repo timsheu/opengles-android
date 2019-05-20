@@ -53,7 +53,7 @@ class MyGLRenderer(context: Context) : GLSurfaceView.Renderer {
     val mBytesPerPixelInYUV = 2
     val mBytesPerPixelInRGB = 3
     val dataSize = (mWidth * mHeight * mBytesPerPixelInYUV)
-    var cmosImageBuffer: ByteBuffer? = null
+    var cmosImageBuffer: ByteBuffer? = ByteBuffer.allocateDirect(dataSize)
     var thermalDataBuffer: IntBuffer? = null
     var thermalImageBuffer: ByteBuffer? = null
 
@@ -97,10 +97,6 @@ class MyGLRenderer(context: Context) : GLSurfaceView.Renderer {
         mVerticesBuffer!!.put(vertices).position(0)
         mTextureCoordinateBuffer = ByteBuffer.allocateDirect(textureCoordinate.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
         mTextureCoordinateBuffer!!.put(textureCoordinate).position(0)
-        cmosImageBuffer = ByteBuffer.allocateDirect(dataSize)
-        cmosImageBuffer?.limit(dataSize)
-
-        cmosImageBuffer!!.position(0)
 
         thermalDataBuffer = ByteBuffer.allocateDirect(mThermalWidth * mThermalHeight * Int.SIZE_BYTES).asIntBuffer()
         for (i in 0 until thermalDataBuffer!!.capacity()) {
@@ -117,18 +113,6 @@ class MyGLRenderer(context: Context) : GLSurfaceView.Renderer {
             thermalImageBuffer!!.put(it*mBytesPerPixelInRGB, rgb.R.toByte())
             thermalImageBuffer!!.put(it*mBytesPerPixelInRGB+1, rgb.G.toByte())
             thermalImageBuffer!!.put(it*mBytesPerPixelInRGB+2, rgb.B.toByte())
-        }
-
-        thermalImageBuffer!!.position(0)
-    }
-
-    fun transformThermalData(intArray: IntArray) {
-        val zeroDegreeOffset = COLOR_TABLE_LOWER_SIZE + 600
-        intArray.forEachIndexed { index, it ->
-            val rgb = NuColor.RGB_ColorTable[zeroDegreeOffset + it]
-            thermalImageBuffer!!.put(index*mBytesPerPixelInRGB, rgb.R.toByte())
-            thermalImageBuffer!!.put(index*mBytesPerPixelInRGB+1, rgb.G.toByte())
-            thermalImageBuffer!!.put(index*mBytesPerPixelInRGB+2, rgb.B.toByte())
         }
 
         thermalImageBuffer!!.position(0)
@@ -258,12 +242,12 @@ class MyGLRenderer(context: Context) : GLSurfaceView.Renderer {
 
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mTextureId)
-        GLES20.glTexSubImage2D(GLES20.GL_TEXTURE_2D, 0, 0, 0, mWidth/2, mHeight, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, cmosImageBuffer)
+        GLES20.glTexSubImage2D(GLES20.GL_TEXTURE_2D, 0, 0, 0, mWidth/2, mHeight, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, NuUSBHandler.shared.cmosBuffers.getReadBuffer())
         GLES20.glUniform1i(mGLCMOSUniformTexture, 0)
 
         GLES20.glActiveTexture(GLES20.GL_TEXTURE1)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mThermalTextureId)
-        GLES20.glTexSubImage2D(GLES20.GL_TEXTURE_2D, 0, 0, 0, mThermalWidth, mThermalHeight, GLES20.GL_RGB, GLES20.GL_UNSIGNED_BYTE, thermalImageBuffer)
+        GLES20.glTexSubImage2D(GLES20.GL_TEXTURE_2D, 0, 0, 0, mThermalWidth, mThermalHeight, GLES20.GL_RGB, GLES20.GL_UNSIGNED_BYTE, NuUSBHandler.shared.thermalBuffers.getReadBuffer())
         GLES20.glUniform1i(mGLThermalUniformTexture, 1)
 
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
