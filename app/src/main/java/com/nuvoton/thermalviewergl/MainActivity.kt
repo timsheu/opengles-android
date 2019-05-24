@@ -1,39 +1,37 @@
 package com.nuvoton.thermalviewergl
 
+import android.content.SharedPreferences
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
-import android.util.Log
 import android.view.View
 import android.view.ViewManager
+import android.view.Window
 import android.view.WindowManager
 import android.widget.TextView
-import com.nuvoton.thermalviewergl.utility.Constants
 import com.nuvoton.thermalviewergl.utility.StrokedTextView
 import com.uber.autodispose.AutoDispose
 import com.uber.autodispose.android.lifecycle.AndroidLifecycleScopeProvider
-import io.reactivex.Flowable
-import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
-import io.reactivex.schedulers.Schedulers
 import org.jetbrains.anko.*
 import org.jetbrains.anko.constraint.layout.constraintLayout
 
 import org.jetbrains.anko.custom.ankoView
 import org.jetbrains.anko.sdk27.coroutines.onClick
-import java.nio.ByteBuffer
-import java.util.*
-import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity() {
-
     var myGLSurfaceView: MyGLSurfaceView? = null
     var temperatureText: TextView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        supportRequestWindowFeature(Window.FEATURE_NO_TITLE)
         ViewUI().setContentView(this)
+        if (defaultSharedPreferences.getBoolean("first", true)) {
+            longToast(resources.getString(R.string.string_first_start))
+            defaultSharedPreferences.edit().putBoolean("first", false).apply()
+        }
     }
 
     override fun onStart() {
@@ -43,7 +41,7 @@ class MainActivity : AppCompatActivity() {
             .`as`(AutoDispose.autoDisposable(AndroidLifecycleScopeProvider.from(this))).subscribe({
             var value = it.toFloat()
             value /= 10
-            temperatureText?.text = resources.getString(R.string.string_temperature, value.toString())
+            temperatureText?.text = resources.getString(R.string.string_temperature_degree, value.toString())
         }, {
             it.printStackTrace()
         })
@@ -68,11 +66,12 @@ class ViewUI : AnkoComponent<MainActivity> {
                 }.lparams(width = matchParent, height = matchParent) {
                     margin = 20
                 }
-                val cmos = button("CMOS") {
+                toggleButton {
                     id = View.generateViewId()
+                    isChecked = owner.myGLSurfaceView?.renderer?.cmosOnOff != 0
+                    text = resources.getString(R.string.string_cmos)
                     onClick {
-                        val cmosOnOff = owner.myGLSurfaceView?.renderer?.cmosOnOff
-                        owner.myGLSurfaceView?.renderer?.cmosOnOff = if(cmosOnOff == 0) 1 else 0
+                        owner.myGLSurfaceView?.renderer?.cmosOnOff = if (owner.myGLSurfaceView?.renderer?.cmosOnOff == 0 ) 1 else 0
                     }
                 }.lparams(width = wrapContent, height = wrapContent) {
                     startToStart = view.id
@@ -80,11 +79,12 @@ class ViewUI : AnkoComponent<MainActivity> {
                     margin = 8
                 }
 
-                val thermal = button("Thermal") {
+                toggleButton {
                     id = View.generateViewId()
+                    isChecked = owner.myGLSurfaceView?.renderer?.thermalOnOff != 0
+                    text = resources.getString(R.string.string_thermal)
                     onClick {
-                        val thermalOnOff = owner.myGLSurfaceView?.renderer?.thermalOnOff
-                        owner.myGLSurfaceView?.renderer?.thermalOnOff = if(thermalOnOff == 0) 1 else 0
+                        owner.myGLSurfaceView?.renderer?.thermalOnOff = if (owner.myGLSurfaceView?.renderer?.thermalOnOff == 0 ) 1 else 0
                     }
                 }.lparams(width = wrapContent, height = wrapContent) {
                     endToEnd = view.id
@@ -92,7 +92,7 @@ class ViewUI : AnkoComponent<MainActivity> {
                     margin = 8
                 }
 
-                val queue = button("UsbRequest") {
+                button(R.string.string_get_image) {
                     id = View.generateViewId()
                     onClick {
                         NuUSBHandler.shared.triggerReadUsbRequest()
@@ -111,12 +111,13 @@ class ViewUI : AnkoComponent<MainActivity> {
                 }
 
                 val temperature = strokedTextView {
-                    text = "Temperature"
+                    text = resources.getString(R.string.string_temperature_default)
                     id = View.generateViewId()
                 }.lparams(width = wrapContent, height = wrapContent) {
                     endToEnd = view.id
                     topToTop = view.id
                     margin = 8
+                    marginEnd = 16
                 }
                 owner.temperatureText = temperature
             }

@@ -32,7 +32,7 @@ class NuUSBHandler {
         val devices = ArrayList(manager.deviceList.values)
         if (devices.size == 1) {
             mDevice = devices[0]
-            value.toast(mDevice.deviceName)
+//            value.toast(mDevice.deviceName)
             val permissionIntent = PendingIntent.getBroadcast(value, 0, Intent(ACTION_USB_PERMISSION), 0)
             manager.requestPermission(mDevice, permissionIntent)
         }

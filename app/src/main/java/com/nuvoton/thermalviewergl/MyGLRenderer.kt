@@ -5,6 +5,7 @@ import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.util.Log
 import com.nuvoton.thermalviewergl.NuColor.Companion.COLOR_TABLE_LOWER_SIZE
+import com.nuvoton.thermalviewergl.utility.Constants
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -42,17 +43,15 @@ class MyGLRenderer(context: Context) : GLSurfaceView.Renderer {
         )
     }
 
-    var mWidth = 640
-    var mHeight = 480
-    var frameWidth = -1
-    var frameHeight = -1
+    var mWidth = Constants.frameWidth
+    var mHeight = Constants.frameHeight
 
-    var mThermalWidth = 32
-    var mThermalHeight = 32
+    var mThermalWidth = Constants.thermalFrameWidth
+    var mThermalHeight = Constants.thermalFrameHeight
 
-    val mBytesPerPixelInYUV = 2
-    val mBytesPerPixelInRGB = 3
-    val dataSize = (mWidth * mHeight * mBytesPerPixelInYUV)
+    val mBytesPerPixelInYUV = Constants.bytePerPixelYUV
+    val mBytesPerPixelInRGB = Constants.bytePerPixelRGB
+    val dataSize = Constants.frameDataSize
     var cmosImageBuffer: ByteBuffer? = ByteBuffer.allocateDirect(dataSize)
     var thermalDataBuffer: IntBuffer? = null
     var thermalImageBuffer: ByteBuffer? = null
@@ -99,23 +98,6 @@ class MyGLRenderer(context: Context) : GLSurfaceView.Renderer {
         mTextureCoordinateBuffer!!.put(textureCoordinate).position(0)
 
         thermalDataBuffer = ByteBuffer.allocateDirect(mThermalWidth * mThermalHeight * Int.SIZE_BYTES).asIntBuffer()
-        for (i in 0 until thermalDataBuffer!!.capacity()) {
-            thermalDataBuffer!!.put(((NuColor.COLOR_TABLE_LOWER_SIZE+600)..(NuColor.COLOR_TABLE_LOWER_SIZE+1600)).random())
-//            thermalDataBuffer!!.put(0)
-        }
-        thermalDataBuffer!!.position(0)
-
-        thermalImageBuffer = ByteBuffer.allocateDirect(mThermalWidth * mThermalHeight * mBytesPerPixelInRGB)
-
-        (0 until thermalDataBuffer!!.capacity()).forEach {
-            val value = thermalDataBuffer!![it]
-            val rgb = NuColor.RGB_ColorTable[value]
-            thermalImageBuffer!!.put(it*mBytesPerPixelInRGB, rgb.R.toByte())
-            thermalImageBuffer!!.put(it*mBytesPerPixelInRGB+1, rgb.G.toByte())
-            thermalImageBuffer!!.put(it*mBytesPerPixelInRGB+2, rgb.B.toByte())
-        }
-
-        thermalImageBuffer!!.position(0)
     }
 
     override fun onSurfaceCreated(unused: GL10?, config: EGLConfig?) {
@@ -212,16 +194,22 @@ class MyGLRenderer(context: Context) : GLSurfaceView.Renderer {
     }
 
     override fun onSurfaceChanged(unused: GL10?, width: Int, height: Int) {
-        frameWidth = width
-        frameHeight = height
-//        val frameRatio = frameWidth.toFloat() / frameHeight.toFloat()
-//        val ratio = mWidth.toFloat() / mHeight.toFloat()
-//        if (frameRatio > ratio) {
-//            frameHeight = (frameWidth/ratio).toInt()
-//        }else {
-//            frameWidth = (frameHeight*ratio).toInt()
-//        }
-        GLES20.glViewport(0, 0, frameWidth, frameHeight)
+        var offsetX = 0
+        var offsetY = 0
+        var frameW = 0
+        var frameH = 0
+        val frameRatio = width.toFloat() / height.toFloat()
+        val ratio = mWidth.toFloat() / mHeight.toFloat()
+        if (frameRatio > ratio) {
+            frameH = height
+            frameW = (ratio * frameH).toInt()
+            offsetX = (width - frameW) / 2
+        }else {
+            frameW = width
+            frameH = (ratio / frameW).toInt()
+            offsetY = (height - frameH) / 2
+        }
+        GLES20.glViewport(offsetX, offsetY, frameW, frameH)
     }
 
     override fun onDrawFrame(unused: GL10?) {

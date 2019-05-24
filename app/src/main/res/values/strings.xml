@@ -1,7 +1,12 @@
 <resources>
     <string name="app_name">ThermalViewer-GL</string>
-    <string name="string_temperature" translatable="false">%1$s \u2103</string>
+    <string name="string_temperature_degree" translatable="false">%1$s \u2103</string>
     <string name="string_connected">Connected</string>
     <string name="string_disconnected">Disconnected</string>
     <string name="string_not_granted">Permission not Granted</string>
+    <string name="string_cmos">Camera</string>
+    <string name="string_thermal">Thermal</string>
+    <string name="string_get_image">Start</string>
+    <string name="string_temperature_default">Temperature</string>
+    <string name="string_first_start">Enable OTG in System Setting for the APP working properly</string>
 </resources>

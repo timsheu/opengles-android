@@ -4,4 +4,9 @@
     <string name="string_connected">已连线</string>
     <string name="string_disconnected">已断线</string>
     <string name="string_not_granted">未取得 USB 存取权限</string>
+    <string name="string_cmos">影像</string>
+    <string name="string_thermal">热成像</string>
+    <string name="string_get_image">开始传图</string>
+    <string name="string_temperature_default">温度 ℃</string>
+    <string name="string_first_start">请记得在系统设定中开启 OTG 功能</string>
 </resources>
