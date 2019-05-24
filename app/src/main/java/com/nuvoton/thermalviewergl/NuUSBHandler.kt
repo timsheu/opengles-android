@@ -8,11 +8,13 @@ import android.content.IntentFilter
 import android.hardware.usb.*
 import com.nuvoton.thermalviewergl.utility.Constants
 import com.nuvoton.thermalviewergl.utility.ExamineFrame
+import org.jetbrains.anko.longToast
 import org.jetbrains.anko.runOnUiThread
 import org.jetbrains.anko.toast
 import java.io.IOException
 import java.lang.Exception
 import java.nio.ByteBuffer
+import java.util.*
 import kotlin.collections.ArrayList
 import kotlin.concurrent.thread
 
@@ -54,7 +56,66 @@ class NuUSBHandler {
     val thermalBuffers = RingBuffer(3, Constants.thermalFrameSize)
 
     private val usbBuffer = ByteBuffer.allocateDirect(Constants.usbBufferSize)
-    
+
+    fun getOnce() {
+        var checkHeaderResult = 0
+        thread {
+            var t = Date().time
+            repeat((0 until Constants.packetsCount).count()) {
+                try {
+                    if (mQueueReadRequest?.queue(usbBuffer, Constants.usbBufferSize) == null) throw IOException("Error queueing request")
+                    mUSBConnection?.requestWait() ?: throw IOException("Null response")
+                    when(it) {
+                        0 -> {
+                            checkHeaderResult += ExamineFrame.checkHeader(usbBuffer)
+                            var test = "header="
+                            (0 until 64 step 8).forEach { index ->
+                                test += usbBuffer[index].toInt().and(0x01).toString()
+                                test += usbBuffer[index+1].toInt().and(0x01).toString()
+                                test += usbBuffer[index+2].toInt().and(0x01).toString()
+                                test += usbBuffer[index+3].toInt().and(0x01).toString()
+                                test += usbBuffer[index+4].toInt().and(0x01).toString()
+                                test += usbBuffer[index+5].toInt().and(0x01).toString()
+                                test += usbBuffer[index+6].toInt().and(0x01).toString()
+                                test += usbBuffer[index+7].toInt().and(0x01).toString()
+                                test += ", "
+                            }
+                            context?.runOnUiThread { longToast(test) }
+                        }
+                        Constants.packetsCount - 1  -> {
+                            checkHeaderResult += ExamineFrame.checkFooter(usbBuffer)
+                            var test = "tail="
+                            (usbBuffer.capacity() - 64 until usbBuffer.capacity() step 8).forEach { index ->
+                                test += usbBuffer[index].toInt().and(0x01).toString()
+                                test += usbBuffer[index+1].toInt().and(0x01).toString()
+                                test += usbBuffer[index+2].toInt().and(0x01).toString()
+                                test += usbBuffer[index+3].toInt().and(0x01).toString()
+                                test += usbBuffer[index+4].toInt().and(0x01).toString()
+                                test += usbBuffer[index+5].toInt().and(0x01).toString()
+                                test += usbBuffer[index+6].toInt().and(0x01).toString()
+                                test += usbBuffer[index+7].toInt().and(0x01).toString()
+                                test += ", "
+                            }
+                            context?.runOnUiThread { longToast(test) }
+                        }
+                    }
+                    usbBuffer.position(0)
+                    if (checkHeaderResult == 0) wholeFrameBuffer.put(usbBuffer)
+                    usbBuffer.position(0)
+                }catch (e: Exception) {
+                    e.printStackTrace()
+                    closeConnection()
+                }
+            }
+            t = Date().time - t
+            context?.runOnUiThread { toast("$t ms to get one frame") }
+            wholeFrameBuffer.position(0)
+            cmosBuffers.writeToBuffer(wholeFrameBuffer)
+            rxTemp.value = updateThermalData(wholeFrameBuffer)
+            wholeFrameBuffer.position(0)
+        }
+    }
+
     fun triggerReadUsbRequest() {
         var checkHeaderResult = 0
         thread {

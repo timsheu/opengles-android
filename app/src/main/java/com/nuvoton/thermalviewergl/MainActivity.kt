@@ -71,6 +71,7 @@ class ViewUI : AnkoComponent<MainActivity> {
                     isChecked = owner.myGLSurfaceView?.renderer?.cmosOnOff != 0
                     text = resources.getString(R.string.string_cmos)
                     onClick {
+                        text = resources.getString(R.string.string_cmos)
                         owner.myGLSurfaceView?.renderer?.cmosOnOff = if (owner.myGLSurfaceView?.renderer?.cmosOnOff == 0 ) 1 else 0
                     }
                 }.lparams(width = wrapContent, height = wrapContent) {
@@ -84,6 +85,7 @@ class ViewUI : AnkoComponent<MainActivity> {
                     isChecked = owner.myGLSurfaceView?.renderer?.thermalOnOff != 0
                     text = resources.getString(R.string.string_thermal)
                     onClick {
+                        text = resources.getString(R.string.string_thermal)
                         owner.myGLSurfaceView?.renderer?.thermalOnOff = if (owner.myGLSurfaceView?.renderer?.thermalOnOff == 0 ) 1 else 0
                     }
                 }.lparams(width = wrapContent, height = wrapContent) {
@@ -92,20 +94,41 @@ class ViewUI : AnkoComponent<MainActivity> {
                     margin = 8
                 }
 
-                button(R.string.string_get_image) {
+                val start = toggleButton {
                     id = View.generateViewId()
+                    text = resources.getString((R.string.string_get_image))
                     onClick {
-                        NuUSBHandler.shared.triggerReadUsbRequest()
-                        thread {
-                            while(NuUSBHandler.shared.isStart.value) {
+                        text = resources.getString((R.string.string_get_image))
+                        if (!isChecked) {
+                            NuUSBHandler.shared.triggerReadUsbRequest()
+                            thread {
+                                while(NuUSBHandler.shared.isStart.value) {
 //                                view.renderer.cmosImageBuffer = NuUSBHandler.shared.cmosBuffers.getReadBuffer()
-                                view.requestRender()
-                                Thread.sleep(10)
+                                    view.requestRender()
+                                    Thread.sleep(10)
+                                }
                             }
+                        }else {
+                            NuUSBHandler.shared.isStart.value = false
                         }
                     }
                 }.lparams(width = wrapContent, height = wrapContent) {
                     startToStart = view.id
+                    topToTop = view.id
+                    margin = 8
+                }
+
+                val once = button("GetOnce") {
+                    id = View.generateViewId()
+                    onClick {
+                        thread {
+                            NuUSBHandler.shared.getOnce()
+                            Thread.sleep(200)
+                            view.requestRender()
+                        }
+                    }
+                }.lparams(width = wrapContent, height = wrapContent) {
+                    startToEnd = start.id
                     topToTop = view.id
                     margin = 8
                 }
