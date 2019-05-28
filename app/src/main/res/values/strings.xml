@@ -6,7 +6,7 @@
     <string name="string_not_granted">Permission not Granted</string>
     <string name="string_cmos">Camera</string>
     <string name="string_thermal">Thermal</string>
-    <string name="string_get_image">Start</string>
+    <string name="string_get_image">Stream</string>
     <string name="string_temperature_default">Temperature</string>
     <string name="string_first_start">Enable OTG in System Setting for the APP working properly</string>
 </resources>

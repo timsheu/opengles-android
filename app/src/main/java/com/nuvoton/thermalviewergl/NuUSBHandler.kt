@@ -48,10 +48,11 @@ class NuUSBHandler {
     var mUSBConnection: UsbDeviceConnection? = null
     var mQueueReadRequest: UsbRequest? = null
     var rxTemp = RxVar(0)
+    var isReady = RxVar(false)
 
     val wholeFrameBuffer = ByteBuffer.allocateDirect(Constants.frameDataSize)
     val thermalFrameBuffer = ByteBuffer.allocateDirect(Constants.thermalFrameSize)
-    var isStart = RxVar(false)
+    var isStart = false
     val cmosBuffers = RingBuffer(3, Constants.frameDataSize)
     val thermalBuffers = RingBuffer(3, Constants.thermalFrameSize)
 
@@ -119,12 +120,12 @@ class NuUSBHandler {
     fun triggerReadUsbRequest() {
         var checkHeaderResult = 0
         thread {
-            while(isStart.value) {
-                repeat((0 until Constants.packetsCount).count()) {
+            while(isStart) {
+                loop@ for (i in 0 until Constants.packetsCount) {
                     try {
                         if (mQueueReadRequest?.queue(usbBuffer, Constants.usbBufferSize) == null) throw IOException("Error queueing request")
                         mUSBConnection?.requestWait() ?: throw IOException("Null response")
-                        when(it) {
+                        when(i) {
                             0 -> checkHeaderResult += ExamineFrame.checkHeader(usbBuffer)
                             Constants.packetsCount - 1  -> checkHeaderResult += ExamineFrame.checkFooter(usbBuffer)
                         }
@@ -133,7 +134,9 @@ class NuUSBHandler {
                         usbBuffer.position(0)
                     }catch (e: Exception) {
                         e.printStackTrace()
-                        closeConnection()
+                        context?.runOnUiThread { toast("e=${e.message}") }
+                        isStart = false
+                        break@loop
                     }
                 }
                 wholeFrameBuffer.position(0)
@@ -142,6 +145,7 @@ class NuUSBHandler {
                 wholeFrameBuffer.position(0)
                 Thread.sleep(50) //TODO: make it dynamic
             }
+            clearBuffers()
         }
     }
 
@@ -200,54 +204,62 @@ class NuUSBHandler {
         mQueueReadRequest?.close()
         mUSBConnection?.close()
         mUSBConnection?.releaseInterface(mUsbInterface)
+        isReady.value = false
+    }
+
+    fun clearBuffers() {
+        usbBuffer.clear()
+        wholeFrameBuffer.clear()
+        thermalFrameBuffer.clear()
         thermalBuffers.initBuffers()
         cmosBuffers.initBuffers()
     }
 
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (ACTION_USB_PERMISSION  == intent?.action) {
+            if (ACTION_USB_PERMISSION == intent?.action) {
                 context?.runOnUiThread { toast(resources.getString(R.string.string_connected)) }
                 thread {
                     synchronized(this) {
                         if (intent.getBooleanExtra((UsbManager.EXTRA_PERMISSION_GRANTED), false)) {
-                            for (i in 0 until mDevice.interfaceCount) {
-                                val inter = mDevice.getInterface(i)
-                                for (j in 0 until mDevice.getInterface(i).endpointCount) {
-                                    val endpoint = inter.getEndpoint(j)
-                                    if (endpoint.direction == UsbConstants.USB_DIR_IN &&
-                                        endpoint.type == UsbConstants.USB_ENDPOINT_XFER_BULK &&
-                                        endpoint.maxPacketSize == 512) {
-                                        mUsbInterface = inter
-                                        mInputEndpoint = endpoint
-//                                        context?.runOnUiThread { toast("interface $i/endpoint $j setup") }
-                                        manager.openDevice(mDevice).apply {
-                                            mUSBConnection = this
-                                            mQueueReadRequest = UsbRequest()
-                                            mQueueReadRequest?.initialize(mUSBConnection, mInputEndpoint)
-                                            claimInterface(mUsbInterface , true)
-                                            setInterface(mUsbInterface)
-                                            isStart.value = true
-//                                            context?.runOnUiThread { toast("after set interface") }
-                                        }
-                                    }
-                                }
-                            }
-                            true
+                            setupDevice()
                         }else {
                             context?.runOnUiThread { toast(resources.getString(R.string.string_not_granted)) }
-                            false
                         }
                     }
                 }
             }else if (UsbManager.ACTION_USB_DEVICE_DETACHED == intent?.action) {
                 context?.runOnUiThread { toast(resources.getString(R.string.string_disconnected)) }
                 synchronized(this) {
-                    isStart.value = false
-                    mDevice.apply {
+                    mDevice?.apply {
                         closeConnection()
                     }
-                    true
+                }
+            }
+        }
+    }
+
+    fun setupDevice() {
+        for (i in 0 until mDevice.interfaceCount) {
+            val inter = mDevice.getInterface(i)
+            for (j in 0 until mDevice.getInterface(i).endpointCount) {
+                val endpoint = inter.getEndpoint(j)
+                if (endpoint.direction == UsbConstants.USB_DIR_IN &&
+                    endpoint.type == UsbConstants.USB_ENDPOINT_XFER_BULK &&
+                    endpoint.maxPacketSize == 512) {
+                    mUsbInterface = inter
+                    mInputEndpoint = endpoint
+                    context?.runOnUiThread { toast("interface $i/endpoint $j setup") }
+                    manager.openDevice(mDevice).apply {
+                        mUSBConnection = this
+                        mQueueReadRequest = UsbRequest()
+                        mQueueReadRequest?.initialize(mUSBConnection, mInputEndpoint)
+                        claimInterface(mUsbInterface , true)
+                        setInterface(mUsbInterface)
+                        isStart = true
+                        isReady.value = true
+//                        context?.runOnUiThread { toast("after set interface") }
+                    }
                 }
             }
         }
