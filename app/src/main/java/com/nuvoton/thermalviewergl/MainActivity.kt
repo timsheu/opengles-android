@@ -1,16 +1,19 @@
 package com.nuvoton.thermalviewergl
 
 import android.content.SharedPreferences
+import android.graphics.Color
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import android.text.method.ScrollingMovementMethod
 import android.view.View
 import android.view.ViewManager
 import android.view.Window
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
+import androidx.core.view.isVisible
 import com.nuvoton.thermalviewergl.utility.StrokedTextView
 import com.uber.autodispose.AutoDispose
 import com.uber.autodispose.android.lifecycle.AndroidLifecycleScopeProvider
@@ -26,6 +29,8 @@ class MainActivity : AppCompatActivity() {
     var myGLSurfaceView: MyGLSurfaceView? = null
     var temperatureText: TextView? = null
     var once: Button? = null
+    var debug: TextView? = null
+    var startButton: Button? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -116,6 +121,7 @@ class ViewUI : AnkoComponent<MainActivity> {
 
                 val start = toggleButton {
                     isEnabled = false
+                    owner.startButton = this
                     id = View.generateViewId()
                     text = resources.getString((R.string.string_get_image))
                     textOn = resources.getString((R.string.string_get_image))
@@ -139,7 +145,7 @@ class ViewUI : AnkoComponent<MainActivity> {
                                     Thread.sleep(20)
                                     view.requestRender()
                                 }
-                                owner.runOnUiThread { isChecked = false }
+//                                owner.runOnUiThread { isChecked = false }
                             }
                         }else {
                             NuUSBHandler.shared.isStart = false
@@ -153,6 +159,7 @@ class ViewUI : AnkoComponent<MainActivity> {
                 }
 
                 val once = button("GetOnce") {
+                    isVisible = false
                     isEnabled = false
                     owner.once = this
                     NuUSBHandler.shared.isReady.observable.observeOn(AndroidSchedulers.mainThread())
@@ -187,6 +194,21 @@ class ViewUI : AnkoComponent<MainActivity> {
                     marginEnd = 16
                 }
                 owner.temperatureText = temperature
+
+                textView {
+                    id = View.generateViewId()
+                    owner.debug = this
+                    backgroundColor = Color.WHITE
+                    movementMethod = ScrollingMovementMethod()
+                }.lparams(width = wrapContent, height = wrapContent) {
+                    startToStart = view.id
+                    endToEnd = view.id
+                    topToTop = view.id
+                    bottomToBottom = view.id
+                    marginStart = 50
+                    marginEnd = 50
+                    elevation = 1000f
+                }
             }
         }
         return test

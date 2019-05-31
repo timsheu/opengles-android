@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.*
+import androidx.core.view.isVisible
 import com.nuvoton.thermalviewergl.utility.Constants
 import com.nuvoton.thermalviewergl.utility.ExamineFrame
 import org.jetbrains.anko.longToast
@@ -17,6 +18,7 @@ import java.nio.ByteBuffer
 import java.util.*
 import kotlin.collections.ArrayList
 import kotlin.concurrent.thread
+import kotlin.experimental.and
 
 class NuUSBHandler {
     companion object {
@@ -60,6 +62,8 @@ class NuUSBHandler {
 
     fun getOnce() {
         var checkHeaderResult = 0
+        var test = ""
+        test += (context as MainActivity).debug?.text
         thread {
             var t = Date().time
             repeat((0 until Constants.packetsCount).count()) {
@@ -69,46 +73,34 @@ class NuUSBHandler {
                     when(it) {
                         0 -> {
                             checkHeaderResult += ExamineFrame.checkHeader(usbBuffer)
-                            var test = "header="
-                            (0 until 64 step 8).forEach { index ->
-                                test += usbBuffer[index].toInt().and(0x01).toString()
-                                test += usbBuffer[index+1].toInt().and(0x01).toString()
-                                test += usbBuffer[index+2].toInt().and(0x01).toString()
-                                test += usbBuffer[index+3].toInt().and(0x01).toString()
-                                test += usbBuffer[index+4].toInt().and(0x01).toString()
-                                test += usbBuffer[index+5].toInt().and(0x01).toString()
-                                test += usbBuffer[index+6].toInt().and(0x01).toString()
-                                test += usbBuffer[index+7].toInt().and(0x01).toString()
-                                test += ", "
+                            var temp = ""
+                            (0 until 64).forEach {
+                                temp += "${it.toString(16)} "
                             }
-                            context?.runOnUiThread { longToast(test) }
+                            test += "header=$temp\n"
                         }
                         Constants.packetsCount - 1  -> {
                             checkHeaderResult += ExamineFrame.checkFooter(usbBuffer)
-                            var test = "tail="
-                            (usbBuffer.capacity() - 64 until usbBuffer.capacity() step 8).forEach { index ->
-                                test += usbBuffer[index].toInt().and(0x01).toString()
-                                test += usbBuffer[index+1].toInt().and(0x01).toString()
-                                test += usbBuffer[index+2].toInt().and(0x01).toString()
-                                test += usbBuffer[index+3].toInt().and(0x01).toString()
-                                test += usbBuffer[index+4].toInt().and(0x01).toString()
-                                test += usbBuffer[index+5].toInt().and(0x01).toString()
-                                test += usbBuffer[index+6].toInt().and(0x01).toString()
-                                test += usbBuffer[index+7].toInt().and(0x01).toString()
-                                test += ", "
+                            var temp = ""
+                            (0 until 64).forEach {
+                                temp += "${it.toString(16)} "
                             }
-                            context?.runOnUiThread { longToast(test) }
+                            test += "tail=$temp\n"
                         }
                     }
+                    context?.runOnUiThread { (context as MainActivity).debug?.text = test }
                     usbBuffer.position(0)
-                    if (checkHeaderResult == 0) wholeFrameBuffer.put(usbBuffer)
+                    wholeFrameBuffer.put(usbBuffer)
+                    if (checkHeaderResult != 0)  context?.runOnUiThread { toast("result=$checkHeaderResult") }
                     usbBuffer.position(0)
+                    checkHeaderResult = 0
                 }catch (e: Exception) {
                     e.printStackTrace()
                     closeConnection()
                 }
             }
             t = Date().time - t
+            test += "\n"
             context?.runOnUiThread { toast("$t ms to get one frame") }
             wholeFrameBuffer.position(0)
             cmosBuffers.writeToBuffer(wholeFrameBuffer)
@@ -119,31 +111,66 @@ class NuUSBHandler {
 
     fun triggerReadUsbRequest() {
         var checkHeaderResult = 0
+        var test = ""
+        test += (context as MainActivity).debug?.text
         thread {
             while(isStart) {
-                loop@ for (i in 0 until Constants.packetsCount) {
+                var i=0
+                while (i < Constants.packetsCount) {
                     try {
                         if (mQueueReadRequest?.queue(usbBuffer, Constants.usbBufferSize) == null) throw IOException("Error queueing request")
                         mUSBConnection?.requestWait() ?: throw IOException("Null response")
+                        if (usbBuffer.position() != usbBuffer.capacity()) {
+//                            context?.runOnUiThread { toast("${usbBuffer.position()}/${usbBuffer.limit()}/${usbBuffer.capacity()}")}
+                            continue
+                        }
                         when(i) {
-                            0 -> checkHeaderResult += ExamineFrame.checkHeader(usbBuffer)
-                            Constants.packetsCount - 1  -> checkHeaderResult += ExamineFrame.checkFooter(usbBuffer)
+                            0 -> {
+                                checkHeaderResult += ExamineFrame.checkHeader(usbBuffer)
+                                var temp = ""
+                                (0 until 64).forEach {
+                                    temp += "${usbBuffer[it].toInt().and(0xff).toString(16)} "
+                                }
+                                test += "header=$temp\n"
+                                val ints = ExamineFrame.checkHeaderArray(usbBuffer)
+                                var temp1 = ""
+                                ints.forEach {
+                                    temp1 += "${it.and(0xff).toString(16)} "
+                                }
+                                test += "header raw=$temp1\n"
+                            }
+                            Constants.packetsCount - 1  -> {
+                                checkHeaderResult += ExamineFrame.checkFooter(usbBuffer)
+                                var temp = ""
+                                (usbBuffer.capacity() - 64 until usbBuffer.capacity()).forEach {
+                                    temp += "${usbBuffer[it].toInt().and(0xff).toString(16)} "
+                                }
+                                test += "tail=$temp\n"
+                                val ints = ExamineFrame.checkFooterArray(usbBuffer)
+                                var temp1 = ""
+                                ints.forEach {
+                                    temp1 += "${it.and(0xff).toString(16)} "
+                                }
+                                test += "footer raw=$temp1\n"
+                            }
                         }
                         usbBuffer.position(0)
-                        if (checkHeaderResult == 0) wholeFrameBuffer.put(usbBuffer)
+                        if (checkHeaderResult == 0) wholeFrameBuffer.put(usbBuffer) else isStart = false
                         usbBuffer.position(0)
+                        i++
                     }catch (e: Exception) {
                         e.printStackTrace()
                         context?.runOnUiThread { toast("e=${e.message}") }
                         isStart = false
-                        break@loop
+                        break
                     }
                 }
                 wholeFrameBuffer.position(0)
                 cmosBuffers.writeToBuffer(wholeFrameBuffer)
                 rxTemp.value = updateThermalData(wholeFrameBuffer)
                 wholeFrameBuffer.position(0)
-                Thread.sleep(50) //TODO: make it dynamic
+                checkHeaderResult = 0
+                Thread.sleep(20) //TODO: make it dynamic
             }
             clearBuffers()
         }
@@ -249,7 +276,7 @@ class NuUSBHandler {
                     endpoint.maxPacketSize == 512) {
                     mUsbInterface = inter
                     mInputEndpoint = endpoint
-                    context?.runOnUiThread { toast("interface $i/endpoint $j setup") }
+//                    context?.runOnUiThread { toast("interface $i/endpoint $j setup") }
                     manager.openDevice(mDevice).apply {
                         mUSBConnection = this
                         mQueueReadRequest = UsbRequest()
